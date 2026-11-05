@@ -1,0 +1,10 @@
+services:
+  - type: worker
+    name: video-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: 9053467327:AAHwX5tcdkUmOyvMkhj_gWRJP1zaTIM8iW8
+        sync: false
