@@ -2,12 +2,17 @@ import os
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 import yt_dlp
 
 TOKEN = os.getenv("BOT_TOKEN")
+# Render автоматически выдает порты и внешние домены, считываем их:
+PORT = int(os.getenv("PORT", 8080))
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 if not TOKEN:
-    raise ValueError("Не найден токен бота! Установите переменную окружения BOT_TOKEN.")
+    raise ValueError("Не найден токен бота!")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -29,7 +34,6 @@ async def download_video(message: types.Message):
     status_msg = await message.answer("⏳ Скачиваю видео, подождите немного...")
 
     output_template = f"%(id)s.%(ext)s"
-    
     ydl_opts = {
         'outtmpl': output_template,
         'format': 'best[ext=mp4]/best',
@@ -66,9 +70,34 @@ async def download_video(message: types.Message):
         if filename and os.path.exists(filename):
             os.remove(filename)
 
+async def on_startup(bot: Bot):
+    # Устанавливаем вебхук при запуске сервера
+    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+    await bot.set_webhook(webhook_url)
+    print(f"Вебхук установлен на: {webhook_url}")
+
 async def main():
-    print("Бот запущен...")
-    await dp.start_polling(bot)
+    dp.startup.register(on_startup)
+    
+    app = web.Application()
+    # Регистрируем обработчик вебхуков для aiogram
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+    )
+    webhook_requests_handler.register(app, path="/webhook")
+    
+    setup_application(app, dp, bot=bot)
+    
+    # Запускаем локальный веб-сервер для приема запросов от Telegram
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"Сервер запущен на порту {PORT}")
+    
+    # Вечный цикл, чтобы сервер не завершал работу
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
